@@ -8,7 +8,7 @@
     <Nullable>enable</Nullable>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>3.1.0</Version>
+    <Version>3.2.0</Version>
     <AssemblyName>TEA_siren_v$(Version)</AssemblyName>
     <RootNamespace>TEA_siren</RootNamespace>
     <Company>TEARLESSVVOID</Company>

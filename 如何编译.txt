@@ -7,7 +7,7 @@ TEA_siren 编译说明
 
 2. 双击运行 publish.bat
    或在 CMD 里执行:
-   cd /d "C:\Users\24121\Desktop\FivM\TEA_siren"
+   cd /d "C:\Users\xxxx\Desktop\FivM\TEA_siren"
    publish.bat
 
 3. 编译成功后

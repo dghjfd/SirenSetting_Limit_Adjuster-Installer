@@ -1,6 +1,7 @@
 // ========== 程序范围（仅以下功能，无其他行为） ==========
 // · 选择/扫描 FiveM plugins 目录
 // · 从 GitHub 指定地址下载 ASI 文件（仅 HttpClient GET）
+// · 启动时检查本安装器在 GitHub 是否有新版本并提示
 // · 备份旧版本到子文件夹、复制新文件到 plugins 目录
 // · 无修改内存、无注入进程、无注册表、无自启动、无扫盘、无其他网络请求
 // =========================================================
@@ -11,10 +12,12 @@ using System.Linq;
 using System.IO;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using System.Text.Json;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Diagnostics;
 
 namespace TEA_siren;
 
@@ -33,6 +36,8 @@ public partial class MainForm : Form
         Timeout = TimeSpan.FromSeconds(60)
     };
 
+    private const string RepoReleasesLatestUrl = "https://api.github.com/repos/dghjfd/SirenSetting_Limit_Adjuster-Installer/releases/latest";
+
     public MainForm()
     {
         InitializeComponent();
@@ -47,6 +52,128 @@ public partial class MainForm : Form
         TrySetIconFromLogo();
         Log("程序已启动");
         BeginInvoke(ShowWelcomeMessage);
+        _ = CheckForUpdateAsync();
+    }
+
+    private async Task CheckForUpdateAsync()
+    {
+        try
+        {
+            var current = Assembly.GetExecutingAssembly().GetName().Version;
+            var currentTuple = (current?.Major ?? 3, current?.Minor ?? 0, current?.Build ?? 0);
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            client.DefaultRequestHeaders.Add("User-Agent", "TEA_siren");
+            client.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
+            var resp = await client.GetAsync(RepoReleasesLatestUrl).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode)
+                return;
+            var json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+            var release = JsonSerializer.Deserialize<GitHubRelease>(json);
+            if (release?.tag_name == null)
+                return;
+            var remote = ParseVersionTag(release.tag_name);
+            if (remote == null || CompareVersion(remote.Value, currentTuple) <= 0)
+                return;
+            var versionStr = release.tag_name.TrimStart('v');
+            var body = string.IsNullOrWhiteSpace(release.body) ? "（无更新说明）" : release.body.Trim();
+            var url = release.html_url ?? "https://github.com/dghjfd/SirenSetting_Limit_Adjuster-Installer/releases";
+            BeginInvoke(() => ShowUpdateAvailable(this, versionStr, body, url));
+        }
+        catch
+        {
+            // 网络或解析失败时静默忽略，不影响使用
+        }
+    }
+
+    private static (int major, int minor, int build)? ParseVersionTag(string tag)
+    {
+        if (string.IsNullOrWhiteSpace(tag))
+            return null;
+        var s = tag.TrimStart('v', 'V').Trim();
+        var parts = s.Split('.');
+        if (parts.Length < 2)
+            return null;
+        if (!int.TryParse(parts[0], out var major) || !int.TryParse(parts[1], out var minor))
+            return null;
+        var build = parts.Length >= 3 && int.TryParse(parts[2], out var b) ? b : 0;
+        return (major, minor, build);
+    }
+
+    private static int CompareVersion((int major, int minor, int build) a, (int major, int minor, int build) b)
+    {
+        if (a.major != b.major) return a.major.CompareTo(b.major);
+        if (a.minor != b.minor) return a.minor.CompareTo(b.minor);
+        return a.build.CompareTo(b.build);
+    }
+
+    private static void ShowUpdateAvailable(Form owner, string versionStr, string releaseBody, string releaseUrl)
+    {
+        using var form = new Form
+        {
+            Text = "发现新版本",
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            Size = new Size(480, 380),
+            StartPosition = FormStartPosition.CenterParent,
+            MaximizeBox = false,
+            MinimizeBox = true,
+            Owner = owner
+        };
+        var lblVer = new Label
+        {
+            Text = $"发现新版本：v{versionStr}，请前往 GitHub 下载。",
+            AutoSize = true,
+            Location = new Point(12, 12),
+            Font = new Font(form.Font.FontFamily, 10f, FontStyle.Bold)
+        };
+        var lblLog = new Label { Text = "更新日志：", AutoSize = true, Location = new Point(12, 40) };
+        var txtBody = new TextBox
+        {
+            ReadOnly = true,
+            Multiline = true,
+            ScrollBars = ScrollBars.Vertical,
+            WordWrap = true,
+            Location = new Point(12, 58),
+            Size = new Size(440, 220),
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = SystemColors.Window,
+            Text = releaseBody
+        };
+        var btnOpen = new Button
+        {
+            Text = "前往下载",
+            Size = new Size(100, 28),
+            Location = new Point(12, 290)
+        };
+        btnOpen.Click += (_, _) =>
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(releaseUrl) { UseShellExecute = true });
+            }
+            catch { /* ignore */ }
+        };
+        var btnClose = new Button
+        {
+            Text = "关闭",
+            Size = new Size(100, 28),
+            Location = new Point(120, 290)
+        };
+        btnClose.Click += (_, _) => form.Close();
+        form.Controls.Add(lblVer);
+        form.Controls.Add(lblLog);
+        form.Controls.Add(txtBody);
+        form.Controls.Add(btnOpen);
+        form.Controls.Add(btnClose);
+        form.ActiveControl = btnClose;
+        form.ShowDialog();
+    }
+
+    private sealed class GitHubRelease
+    {
+        public string? tag_name { get; set; }
+        public string? name { get; set; }
+        public string? body { get; set; }
+        public string? html_url { get; set; }
     }
 
     private static void ShowWelcomeMessage()
