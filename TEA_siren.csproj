@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>3.1.0</Version>
+    <AssemblyName>TEA_siren_v$(Version)</AssemblyName>
+    <RootNamespace>TEA_siren</RootNamespace>
+    <Company>TEARLESSVVOID</Company>
+    <Product>Siren Plugin Installer</Product>
+    <Copyright>Copyright (c) TEARLESSVVOID</Copyright>
+    <Description>SirenSetting Limit Adjuster Installer for FiveM</Description>
+    <SignAssembly>false</SignAssembly>
+  </PropertyGroup>
+
+  <!-- ? publish ??????????????? EXE ??? -->
+  <PropertyGroup Condition="'$(PublishSingleFile)'=='true'">
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('$(ProjectDir)Logo.png')">
+    <EmbeddedResource Include="Logo.png" />
+  </ItemGroup>
+
+  <Target Name="PngToIco" BeforeTargets="Build" Condition="Exists('$(ProjectDir)Logo.png')">
+    <Exec WorkingDirectory="$(ProjectDir)" Command="powershell -NoProfile -ExecutionPolicy Bypass -File PngToIco.ps1" />
+  </Target>
+
+  <!-- Sign with: put cert.pfx in project dir, uncomment and set password -->
+  <!--
+  <Target Name="SignOutput" AfterTargets="Publish" Condition="Exists('$(ProjectDir)cert.pfx')">
+    <Exec Command="signtool sign /f &quot;$(ProjectDir)cert.pfx&quot; /p YOUR_PASSWORD /tr http://timestamp.digicert.com /td sha256 /fd sha256 &quot;$(PublishDir)$(AssemblyName).exe&quot;" />
+  </Target>
+  -->
+
+</Project>

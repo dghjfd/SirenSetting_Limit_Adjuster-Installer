@@ -1,0 +1,20 @@
+TEA_siren 编译说明
+==================
+
+1. 确认已安装 .NET 8 SDK
+   打开 CMD 或 PowerShell，输入: dotnet --version
+   应显示 8.x.x。若未安装，请到 https://dotnet.microsoft.com/download 下载。
+
+2. 双击运行 publish.bat
+   或在 CMD 里执行:
+   cd /d "C:\Users\24121\Desktop\FivM\TEA_siren"
+   publish.bat
+
+3. 编译成功后
+   程序会生成在: TEA_siren\EXE\TEA_siren.exe
+   脚本会自动打开 EXE 文件夹。
+
+4. 若 EXE 文件夹为空或没有 TEA_siren.exe
+   - 请查看运行 publish.bat 时窗口里是否有红色报错。
+   - 在 CMD 中手动执行下面整行再查看报错:
+   dotnet publish -c Release -r win-x64 --self-contained true -o EXE -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none -p:DebugSymbols=false

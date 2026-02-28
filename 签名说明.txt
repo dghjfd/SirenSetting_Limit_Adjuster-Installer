@@ -1,0 +1,25 @@
+========================================
+  TEA Siren Installer - 代码签名说明
+========================================
+
+【为何需要签名】
+未签名的 exe 可能被 Windows Defender 或杀毒软件误报。
+使用受信任的代码签名证书签名后，可显著降低误报率。
+
+【获取证书】
+1. 购买商业证书：DigiCert、Sectigo、GlobalSign 等（约 $100-400/年）
+2. 免费选项：Azure Trusted Signing（需 Azure 账号）
+3. 自签名证书：仅用于测试，不会被系统信任
+
+【签名步骤】
+1. 将证书文件 cert.pfx 放入项目目录
+2. 编辑 TEA_siren.csproj，取消注释 SignOutput 部分
+3. 将 YOUR_PASSWORD 替换为证书密码
+4. 执行: dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
+5. 或运行 publish.bat
+
+【使用 signtool 手动签名】
+signtool sign /f cert.pfx /p 密码 /tr http://timestamp.digicert.com /td sha256 /fd sha256 TEA_siren.exe
+
+signtool 位于 Windows SDK 的 bin 目录，如：
+C:\Program Files (x86)\Windows Kits\10\bin\x64\signtool.exe

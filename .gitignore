@@ -1,0 +1,8 @@
+bin/
+obj/
+EXE/
+*.user
+*.suo
+.vs/
+publish_log.txt
+build_out.txt
