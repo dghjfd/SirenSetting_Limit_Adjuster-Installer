@@ -55,6 +55,19 @@ public partial class MainForm : Form
 
     private async Task CheckForUpdateAsync()
     {
+        var result = await FetchUpdateInfoAsync().ConfigureAwait(false);
+        if (result == null || !result.Value.hasUpdate)
+            return;
+        var r = result.Value;
+        var forceUpdate = CompareVersion(r.currentTuple, (3, 6, 0)) >= 0;
+        BeginInvoke(() => ShowUpdateAvailable(this, r.versionStr, r.body, r.url, forceUpdate));
+    }
+
+    /// <summary>
+    /// 获取 GitHub 最新版本信息。返回 null 表示网络/解析失败；hasUpdate 为 false 表示已是最新。
+    /// </summary>
+    private async Task<(bool hasUpdate, string versionStr, string body, string url, (int, int, int) currentTuple)?> FetchUpdateInfoAsync()
+    {
         try
         {
             var current = Assembly.GetExecutingAssembly().GetName().Version;
@@ -64,24 +77,56 @@ public partial class MainForm : Form
             client.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
             var resp = await client.GetAsync(RepoReleasesLatestUrl).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
-                return;
+                return (false, "", "", "", currentTuple);
             var json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
             var release = JsonSerializer.Deserialize<GitHubRelease>(json);
             if (release?.tag_name == null)
-                return;
+                return (false, "", "", "", currentTuple);
             var remote = ParseVersionTag(release.tag_name);
             if (remote == null || CompareVersion(remote.Value, currentTuple) <= 0)
-                return;
+                return (false, "", "", "", currentTuple);
             var versionStr = release.tag_name.TrimStart('v');
             var body = string.IsNullOrWhiteSpace(release.body) ? "（无更新说明）" : release.body.Trim();
             var url = release.html_url ?? "https://github.com/dghjfd/SirenSetting_Limit_Adjuster-Installer/releases";
-            var forceUpdate = CompareVersion(currentTuple, (3, 6, 0)) >= 0;
-            BeginInvoke(() => ShowUpdateAvailable(this, versionStr, body, url, forceUpdate));
+            return (true, versionStr, body, url, currentTuple);
         }
         catch
         {
-            // 网络或解析失败时静默忽略，不影响使用
+            return null;
         }
+    }
+
+    private async void BtnCheckUpdate_Click(object? sender, EventArgs e)
+    {
+        btnCheckUpdate.Enabled = false;
+        lblStatus.Text = "正在检查...";
+        lblStatus.ForeColor = Color.FromArgb(170, 178, 188);
+        Log("用户手动检查更新");
+        var result = await FetchUpdateInfoAsync().ConfigureAwait(false);
+        BeginInvoke(() =>
+        {
+            btnCheckUpdate.Enabled = true;
+            if (result == null)
+            {
+                lblStatus.Text = "就绪";
+                Log("检查更新失败（网络或解析错误）");
+                MessageBox.Show("检查更新失败，请检查网络连接或稍后再试。", "检查更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (result.Value.hasUpdate)
+            {
+                var r = result.Value;
+                var forceUpdate = CompareVersion(r.currentTuple, (3, 6, 0)) >= 0;
+                ShowUpdateAvailable(this, r.versionStr, r.body, r.url, forceUpdate);
+            }
+            else
+            {
+                lblStatus.Text = "就绪";
+                lblStatus.ForeColor = Color.FromArgb(120, 200, 140);
+                Log("当前已是最新版本");
+                MessageBox.Show("当前已是最新版本，无需更新。", "检查更新", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        });
     }
 
     private static (int major, int minor, int build)? ParseVersionTag(string tag)
