@@ -25,12 +25,10 @@ public partial class MainForm : Form
 {
     private const string AsiFileName = "SirenSetting_Limit_Adjuster_b3751.asi";
     private const int NewVersion = 3751;
-    // Release 无独立资产，ASI 在 main 分支，优先 raw 链接，失败时从 zip 提取
-    private static readonly string[] DownloadUrls =
-    {
-        "https://raw.githubusercontent.com/KevinL852/SirenSetting_Limit_Adjuster/main/SirenSetting_Limit_Adjuster_b3751.asi",
-        "https://github.com/KevinL852/SirenSetting_Limit_Adjuster/archive/refs/heads/main.zip"
-    };
+    // Release 无独立资产，ASI 在 main 分支。优先官方 raw，失败则试国内代理（实时转发 GitHub），最后从 zip 提取
+    private const string RawAsiUrl = "https://raw.githubusercontent.com/KevinL852/SirenSetting_Limit_Adjuster/main/SirenSetting_Limit_Adjuster_b3751.asi";
+    private static readonly string[] RawProxyPrefixes = { "https://mirror.ghproxy.com/", "https://ghproxy.net/" };
+    private static readonly string ZipArchiveUrl = "https://github.com/KevinL852/SirenSetting_Limit_Adjuster/archive/refs/heads/main.zip";
     private static readonly HttpClient HttpClient = new()
     {
         Timeout = TimeSpan.FromSeconds(60)
@@ -183,7 +181,7 @@ public partial class MainForm : Form
             "▶ 功能：自动从 GitHub 官方仓库下载 ASI 插件到您指定的 FiveM plugins 目录，用于提升警笛相关限制。\n\n" +
             "▶ 使用方法：\n" +
             "  1. 点击「自动扫描」或「选择目录」指定 FiveM 的 plugins 文件夹\n" +
-            "  2. 点击「安装插件」即可自动下载并安装\n" +
+            "  2. 点击「安装插件」从 GitHub 自动下载并安装；若无法访问 GitHub，可先通过其他途径获取 .asi 文件，再点击「从本地安装」选择该文件即可\n" +
             "  3. 若已存在旧版本，将自动备份后替换\n\n" +
             "▶ 本软件完全免费。如有人向您收费，您已被骗，请勿购买。\n\n" +
             "▶ 安全声明：\n" +
@@ -430,6 +428,7 @@ public partial class MainForm : Form
         }
 
         btnInstall.Enabled = false;
+        btnInstallLocal.Enabled = false;
         btnBrowse.Enabled = false;
         btnScan.Enabled = false;
         progressBar.Minimum = 0;
@@ -448,30 +447,243 @@ public partial class MainForm : Form
             lblStatus.Text = "失败";
             lblStatus.ForeColor = Color.FromArgb(220, 100, 100);
             Log($"安装失败: {ex.Message}");
+            var msg = ex.Message;
+            var isNetworkError = msg.Contains("raw.githubusercontent.com", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("找不到请求的类型的数据", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("无法连接", StringComparison.OrdinalIgnoreCase)
+                || ex is HttpRequestException || ex is System.Net.Sockets.SocketException;
+            if (isNetworkError)
+            {
+                MessageBox.Show(
+                    "无法连接 GitHub（当前网络可能无法访问，如遇墙或 DNS 异常）。\n\n" +
+                    "请改用「从本地安装」：\n" +
+                    "1. 通过代理、镜像或他人获取 " + AsiFileName + "\n" +
+                    "2. 点击「从本地安装」并选择该文件即可完成安装。",
+                    "无法连接 GitHub",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+            else
+            {
+                MessageBox.Show($"安装失败: {msg}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        finally
+        {
+            btnInstall.Enabled = true;
+            btnInstallLocal.Enabled = true;
+            btnBrowse.Enabled = true;
+            btnScan.Enabled = true;
+        }
+    }
+
+    private void BtnInstallLocal_Click(object sender, EventArgs e)
+    {
+        var pluginsPath = txtPath.Text.Trim();
+        if (string.IsNullOrEmpty(pluginsPath))
+        {
+            Log("错误: 请先选择或扫描 plugins 目录");
+            MessageBox.Show("请先选择或扫描 plugins 目录", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        using var dialog = new OpenFileDialog
+        {
+            Title = "选择已下载的 ASI 文件（无法访问 GitHub 时可用）",
+            Filter = "ASI 文件 (*.asi)|*.asi|所有文件 (*.*)|*.*",
+            FilterIndex = 1
+        };
+        if (dialog.ShowDialog() != DialogResult.OK)
+            return;
+
+        var sourcePath = dialog.FileName;
+        var destFileName = Path.GetFileName(sourcePath);
+        if (string.IsNullOrEmpty(destFileName) || !destFileName.EndsWith(".asi", StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show("请选择有效的 .asi 文件。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        btnInstall.Enabled = false;
+        btnInstallLocal.Enabled = false;
+        btnBrowse.Enabled = false;
+        btnScan.Enabled = false;
+        progressBar.Minimum = 0;
+        progressBar.Maximum = 100;
+        progressBar.Value = 0;
+        progressBar.Style = ProgressBarStyle.Blocks;
+        Log("开始从本地安装...");
+        Application.DoEvents();
+
+        try
+        {
+            InstallFromLocalFile(pluginsPath, sourcePath, destFileName);
+        }
+        catch (Exception ex)
+        {
+            lblStatus.Text = "失败";
+            lblStatus.ForeColor = Color.FromArgb(220, 100, 100);
+            Log($"安装失败: {ex.Message}");
             MessageBox.Show($"安装失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
         {
             btnInstall.Enabled = true;
+            btnInstallLocal.Enabled = true;
             btnBrowse.Enabled = true;
             btnScan.Enabled = true;
         }
+    }
+
+    private void InstallFromLocalFile(string pluginsPath, string sourcePath, string destFileName)
+    {
+        ReportProgress(5, "准备中...");
+        Log($"目标目录: {pluginsPath}");
+        Log($"源文件: {sourcePath}");
+
+        if (!Directory.Exists(pluginsPath))
+        {
+            Directory.CreateDirectory(pluginsPath);
+            Log("已创建 plugins 目录");
+        }
+
+        var fileVersion = ExtractVersion(destFileName) ?? 0;
+        var destPath = Path.Combine(pluginsPath, destFileName);
+
+        ReportProgress(15, "检查现有版本...");
+        var existingFiles = Directory.GetFiles(pluginsPath, "SirenSetting_Limit_Adjuster_b*.asi");
+        var toBackup = existingFiles
+            .Select(f => (Path: f, Ver: ExtractVersion(Path.GetFileName(f))))
+            .Where(x => x.Ver.HasValue && x.Ver.Value < fileVersion)
+            .ToList();
+
+        if (toBackup.Count > 0 || File.Exists(destPath))
+        {
+            var msg = toBackup.Count > 0
+                ? $"检测到 {toBackup.Count} 个旧版本（版本号 < b{fileVersion}）\n将全部备份后安装，是否继续？"
+                : $"目标位置已存在同名文件，是否替换？\n（旧文件将移入备份文件夹）";
+            var result = MessageBox.Show(msg, "确认替换", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (result != DialogResult.Yes)
+            {
+                Log("用户取消替换");
+                ReportProgress(0, "已取消");
+                lblStatus.ForeColor = Color.FromArgb(140, 150, 160);
+                return;
+            }
+        }
+
+        ReportProgress(25, "备份旧版本...");
+        var backupFolder = Path.Combine(pluginsPath, "SirenSetting_Limit_Adjuster_备份");
+        if (!Directory.Exists(backupFolder))
+        {
+            Directory.CreateDirectory(backupFolder);
+            Log($"已创建备份文件夹: {backupFolder}");
+        }
+
+        var step = toBackup.Count > 0 ? 30 / Math.Max(1, toBackup.Count + 1) : 0;
+        var p = 25;
+        foreach (var (filePath, _) in toBackup)
+        {
+            var name = Path.GetFileName(filePath);
+            var backupPath = Path.Combine(backupFolder, name);
+            File.Copy(filePath, backupPath, overwrite: true);
+            File.Delete(filePath);
+            p += step;
+            ReportProgress(p, "备份旧版本...");
+            Log($"已备份并删除旧版本: {name}");
+        }
+
+        if (File.Exists(destPath) && !toBackup.Any(o => string.Equals(o.Path, destPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            var backupPath = Path.Combine(backupFolder, Path.GetFileName(destPath));
+            File.Copy(destPath, backupPath, overwrite: true);
+            File.Delete(destPath);
+            ReportProgress(60, "备份完成");
+            Log($"已备份并删除: {Path.GetFileName(destPath)}");
+        }
+        else if (toBackup.Count > 0)
+        {
+            ReportProgress(60, "备份完成");
+        }
+
+        ReportProgress(80, "安装中...");
+        File.Copy(sourcePath, destPath, overwrite: true);
+        Log($"已安装: {destPath}");
+
+        ReportProgress(100, "成功");
+        lblStatus.ForeColor = Color.FromArgb(120, 200, 140);
+        MessageBox.Show($"SirenSetting Limit Adjuster 已成功安装到:\n{destPath}\n\n（从本地文件安装，适用于无法访问 GitHub 的用户）", "安装完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        Log("安装完成");
     }
 
     private async Task<byte[]> DownloadAsiAsync()
     {
         ReportProgress(5, "正在下载...");
         Log("正在下载 ASI 文件...");
-        var response = await HttpClient.GetAsync(DownloadUrls[0]);
-        if (response.IsSuccessStatusCode)
+
+        // 1) 先试官方 raw（带实时进度）
+        try
         {
-            ReportProgress(35, "下载完成");
-            return await response.Content.ReadAsByteArrayAsync();
+            var response = await HttpClient.GetAsync(RawAsiUrl, HttpCompletionOption.ResponseHeadersRead);
+            if (response.IsSuccessStatusCode)
+            {
+                var bytes = await DownloadStreamWithProgressAsync(response, 5, 35, "ASI");
+                ReportProgress(35, "下载完成");
+                return bytes;
+            }
+        }
+        catch { /* 官方不可达，试备用 */ }
+
+        // 2) 再试国内代理（带实时进度）
+        foreach (var prefix in RawProxyPrefixes)
+        {
+            try
+            {
+                var proxyUrl = prefix + RawAsiUrl;
+                Log($"尝试备用: {new Uri(proxyUrl).Host} ...");
+                var response = await HttpClient.GetAsync(proxyUrl, HttpCompletionOption.ResponseHeadersRead);
+                if (response.IsSuccessStatusCode)
+                {
+                    var bytes = await DownloadStreamWithProgressAsync(response, 5, 35, "ASI");
+                    ReportProgress(35, "下载完成");
+                    return bytes;
+                }
+            }
+            catch { /* 该代理不可用，试下一个 */ }
         }
 
+        // 3) 最后从仓库 zip 提取（先试官方，失败再试代理，带实时进度）
         ReportProgress(15, "从压缩包提取...");
-        Log("直链失败，尝试从仓库压缩包提取...");
-        var zipBytes = await HttpClient.GetByteArrayAsync(DownloadUrls[1]);
+        Log("直链与备用均失败，尝试从仓库压缩包提取...");
+        byte[]? zipBytes = null;
+        try
+        {
+            var response = await HttpClient.GetAsync(ZipArchiveUrl, HttpCompletionOption.ResponseHeadersRead);
+            if (response.IsSuccessStatusCode)
+                zipBytes = await DownloadStreamWithProgressAsync(response, 15, 30, "压缩包");
+        }
+        catch { /* 官方 zip 不可达 */ }
+        if (zipBytes == null || zipBytes.Length == 0)
+        {
+            foreach (var prefix in RawProxyPrefixes)
+            {
+                try
+                {
+                    var response = await HttpClient.GetAsync(prefix + ZipArchiveUrl, HttpCompletionOption.ResponseHeadersRead);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        zipBytes = await DownloadStreamWithProgressAsync(response, 15, 30, "压缩包");
+                        Log($"通过 {new Uri(prefix).Host} 获取压缩包");
+                        break;
+                    }
+                }
+                catch { /* 试下一个 */ }
+            }
+        }
+        if (zipBytes == null || zipBytes.Length == 0)
+            throw new Exception("无法从 GitHub 或备用代理获取文件，请使用「从本地安装」选择已下载的 .asi 文件。");
+
+        ReportProgress(32, "解压中...");
         using var zip = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read);
         var entry = zip.GetEntry($"SirenSetting_Limit_Adjuster-main/{AsiFileName}")
                    ?? zip.GetEntry(AsiFileName);
@@ -493,6 +705,52 @@ public partial class MainForm : Form
         using var ms = new MemoryStream();
         await stream.CopyToAsync(ms);
         ReportProgress(35, "下载完成");
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// 按块读取响应流并报告进度到进度条与日志（实时控制台）
+    /// </summary>
+    private async Task<byte[]> DownloadStreamWithProgressAsync(HttpResponseMessage response, int progressStart, int progressEnd, string logLabel)
+    {
+        var total = response.Content.Headers.ContentLength;
+        await using var stream = await response.Content.ReadAsStreamAsync();
+        using var ms = new MemoryStream(total > 0 ? (int)total : 0);
+        var buffer = new byte[32 * 1024];
+        long received = 0;
+        int lastLoggedPct = -1;
+        int lastLoggedKb = 0;
+        int range = Math.Max(1, progressEnd - progressStart);
+
+        while (true)
+        {
+            int read = await stream.ReadAsync(buffer);
+            if (read == 0) break;
+            ms.Write(buffer, 0, read);
+            received += read;
+
+            int pct = total.HasValue && total.Value > 0
+                ? (int)(100 * received / total.Value)
+                : 0;
+            int barPct = progressStart + (int)(range * (total.HasValue && total.Value > 0 ? (double)received / total.Value : 0.5));
+            ReportProgress(Math.Clamp(barPct, progressStart, progressEnd), total.HasValue ? $"下载 {received / 1024} / {total.Value / 1024} KB ({pct}%)" : $"下载 {received / 1024} KB");
+
+            if (total.HasValue && total.Value > 0 && pct >= lastLoggedPct + 10)
+            {
+                lastLoggedPct = (pct / 10) * 10;
+                Log($"{logLabel} 已下载: {received / 1024} KB / {total.Value / 1024} KB ({pct}%)");
+            }
+            else if (!total.HasValue)
+            {
+                int kb = (int)(received / 1024);
+                if (kb >= lastLoggedKb + 200)
+                {
+                    lastLoggedKb = kb;
+                    Log($"{logLabel} 已下载: {kb} KB");
+                }
+            }
+        }
+
         return ms.ToArray();
     }
 

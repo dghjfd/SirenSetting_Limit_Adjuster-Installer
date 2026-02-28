@@ -24,6 +24,7 @@ partial class MainForm
         btnBrowse = new Button();
         btnScan = new Button();
         btnInstall = new Button();
+        btnInstallLocal = new Button();
         lblStatus = new Label();
         progressBar = new ProgressBar();
         lblLog = new Label();
@@ -111,11 +112,26 @@ partial class MainForm
         btnInstall.UseVisualStyleBackColor = false;
         btnInstall.Click += BtnInstall_Click;
         //
+        // btnInstallLocal
+        //
+        btnInstallLocal.BackColor = Color.FromArgb(60, 75, 95);
+        btnInstallLocal.FlatStyle = FlatStyle.Flat;
+        btnInstallLocal.FlatAppearance.BorderColor = Color.FromArgb(90, 110, 135);
+        btnInstallLocal.FlatAppearance.BorderSize = 1;
+        btnInstallLocal.ForeColor = Color.FromArgb(235, 238, 242);
+        btnInstallLocal.Location = new Point(280, 120);
+        btnInstallLocal.Name = "btnInstallLocal";
+        btnInstallLocal.Size = new Size(120, 32);
+        btnInstallLocal.TabIndex = 11;
+        btnInstallLocal.Text = "从本地安装";
+        btnInstallLocal.UseVisualStyleBackColor = false;
+        btnInstallLocal.Click += BtnInstallLocal_Click;
+        //
         // lblStatus
         //
         lblStatus.AutoSize = true;
         lblStatus.ForeColor = Color.FromArgb(170, 178, 188);
-        lblStatus.Location = new Point(280, 128);
+        lblStatus.Location = new Point(410, 128);
         lblStatus.Name = "lblStatus";
         lblStatus.Size = new Size(32, 17);
         lblStatus.TabIndex = 6;
@@ -181,6 +197,7 @@ partial class MainForm
         Controls.Add(lblLog);
         Controls.Add(progressBar);
         Controls.Add(lblStatus);
+        Controls.Add(btnInstallLocal);
         Controls.Add(btnInstall);
         Controls.Add(btnScan);
         Controls.Add(btnBrowse);
@@ -204,6 +221,7 @@ partial class MainForm
     private Button btnBrowse;
     private Button btnScan;
     private Button btnInstall;
+    private Button btnInstallLocal;
     private Label lblStatus;
     private ProgressBar progressBar;
     private Label lblLog;
