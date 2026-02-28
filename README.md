@@ -1,6 +1,7 @@
 # TEA Siren Installer
 
-> FiveM 警灯上限插件（SirenSetting Limit Adjuster）一键安装工具 · 便携单文件 · 免费无捆绑
+> FiveM 警灯上限插件（SirenSetting Limit Adjuster）一键安装工具 · 便携单文件 · 免费无捆绑  
+> **English:** [README_EN.md](README_EN.md)
 
 基于 [SirenSetting_Limit_Adjuster](https://github.com/KevinL852/SirenSetting_Limit_Adjuster) 官方仓库制作的图形化安装器，方便新手一键将 ASI 插件安装到 FiveM 的 `plugins` 目录。
 
