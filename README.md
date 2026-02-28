@@ -1,2 +1,1 @@
-# SirenSetting_Limit_Adjuster-Installer
-FiveM Warning Light Maximum Installation Tool 
+This is a portable installer developed based on https://github.com/KevinL852/SirenSetting_Limit_Adjuster?tab=readme-ov-file to make it easier for beginners to install for the first time. It has no suspicious behavior. This is the first program I wrote. Its working principle is only to: select a directory → download ASI files → copy them to the specified plugins directory. No backdoors, no bundling, no disk scanning, does not modify memory, does not inject into processes.
