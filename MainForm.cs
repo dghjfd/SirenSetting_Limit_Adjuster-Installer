@@ -203,7 +203,7 @@ public partial class MainForm : Form
             "  · 仅执行：选择目录 → 下载 ASI 文件 → 复制到指定 plugins 目录\n" +
             "  · 关闭程序即完全退出，不会驻留后台\n" +
             "  · 源码可公开审核，欢迎监督。如有后门，那么你下载的程序可能遭到恶意二次修改并且重新宣传\n\n" +
-            "© Copyright TEARLESSVVOID",
+            "制作人: TEARLESSVVOID\n© Copyright TEARLESSVVOID",
             "使用说明",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
