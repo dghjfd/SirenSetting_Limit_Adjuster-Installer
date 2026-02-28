@@ -75,7 +75,8 @@ public partial class MainForm : Form
             var versionStr = release.tag_name.TrimStart('v');
             var body = string.IsNullOrWhiteSpace(release.body) ? "（无更新说明）" : release.body.Trim();
             var url = release.html_url ?? "https://github.com/dghjfd/SirenSetting_Limit_Adjuster-Installer/releases";
-            BeginInvoke(() => ShowUpdateAvailable(this, versionStr, body, url));
+            var forceUpdate = CompareVersion(currentTuple, (3, 6, 0)) >= 0;
+            BeginInvoke(() => ShowUpdateAvailable(this, versionStr, body, url, forceUpdate));
         }
         catch
         {
@@ -104,25 +105,27 @@ public partial class MainForm : Form
         return a.build.CompareTo(b.build);
     }
 
-    private static void ShowUpdateAvailable(Form owner, string versionStr, string releaseBody, string releaseUrl)
+    private static void ShowUpdateAvailable(Form owner, string versionStr, string releaseBody, string releaseUrl, bool forceUpdate)
     {
         using var form = new Form
         {
-            Text = "需要更新",
+            Text = forceUpdate ? "需要更新" : "发现新版本",
             FormBorderStyle = FormBorderStyle.FixedDialog,
             Size = new Size(480, 380),
             StartPosition = FormStartPosition.CenterParent,
             MaximizeBox = false,
-            MinimizeBox = false,
+            MinimizeBox = !forceUpdate,
             Owner = owner
         };
         var lblVer = new Label
         {
-            Text = $"检测到新版本 v{versionStr}，请更新后再使用本程序。",
+            Text = forceUpdate
+                ? $"检测到新版本 v{versionStr}，请更新后再使用本程序。"
+                : $"发现新版本：v{versionStr}，请前往 GitHub 下载。",
             AutoSize = true,
             Location = new Point(12, 12),
             Font = new Font(form.Font.FontFamily, 10f, FontStyle.Bold),
-            ForeColor = Color.FromArgb(200, 80, 80)
+            ForeColor = forceUpdate ? Color.FromArgb(200, 80, 80) : form.ForeColor
         };
         var lblLog = new Label { Text = "更新日志：", AutoSize = true, Location = new Point(12, 40) };
         var txtBody = new TextBox
@@ -140,7 +143,7 @@ public partial class MainForm : Form
         var btnOpen = new Button
         {
             Text = "前往下载",
-            Size = new Size(120, 32),
+            Size = new Size(forceUpdate ? 120 : 100, forceUpdate ? 32 : 28),
             Location = new Point(12, 290)
         };
         btnOpen.Click += (_, _) =>
@@ -152,14 +155,29 @@ public partial class MainForm : Form
             catch { /* ignore */ }
             form.Close();
         };
-        form.FormClosing += (_, _) => Application.Exit();
+        if (forceUpdate)
+            form.FormClosing += (_, _) => Application.Exit();
         form.Controls.Add(lblVer);
         form.Controls.Add(lblLog);
         form.Controls.Add(txtBody);
         form.Controls.Add(btnOpen);
-        form.ActiveControl = btnOpen;
+        if (!forceUpdate)
+        {
+            var btnClose = new Button
+            {
+                Text = "关闭",
+                Size = new Size(100, 28),
+                Location = new Point(120, 290)
+            };
+            btnClose.Click += (_, _) => form.Close();
+            form.Controls.Add(btnClose);
+            form.ActiveControl = btnClose;
+        }
+        else
+            form.ActiveControl = btnOpen;
         form.ShowDialog();
-        Application.Exit();
+        if (forceUpdate)
+            Application.Exit();
     }
 
     private sealed class GitHubRelease
