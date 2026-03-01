@@ -246,3 +246,4 @@ partial class MainForm
     private TextBox txtLog;
     private Label lblCopyright;
 }
+
