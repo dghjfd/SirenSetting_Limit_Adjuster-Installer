@@ -34,7 +34,7 @@ public partial class MainForm : Form
         Timeout = TimeSpan.FromSeconds(60)
     };
 
-    private const string RepoReleasesLatestUrl = "https://api.github.com/repos/dghjfd/SirenSetting_Limit_Adjuster-Installer/releases/latest";
+    private const string RepoReleasesUrl = "https://api.github.com/repos/dghjfd/SirenSetting_Limit_Adjuster-Installer/releases?per_page=20";
 
     public MainForm()
     {
@@ -60,35 +60,52 @@ public partial class MainForm : Form
             return;
         var r = result.Value;
         var forceUpdate = CompareVersion(r.currentTuple, (3, 6, 0)) >= 0;
-        BeginInvoke(() => ShowUpdateAvailable(this, r.versionStr, r.body, r.url, forceUpdate));
+        BeginInvoke(() => ShowUpdateAvailable(this, r.versionStr, r.fullChangelog, r.url, forceUpdate, r.exeDownloadUrl));
     }
 
     /// <summary>
-    /// 获取 GitHub 最新版本信息。返回 null 表示网络/解析失败；hasUpdate 为 false 表示已是最新。
+    /// 获取 GitHub 发布列表，判断是否有更新，并拼接各版本更新日志。返回 null 表示网络/解析失败。
     /// </summary>
-    private async Task<(bool hasUpdate, string versionStr, string body, string url, (int, int, int) currentTuple)?> FetchUpdateInfoAsync()
+    private async Task<(bool hasUpdate, string versionStr, string fullChangelog, string url, (int, int, int) currentTuple, string? exeDownloadUrl)?> FetchUpdateInfoAsync()
     {
         try
         {
             var current = Assembly.GetExecutingAssembly().GetName().Version;
             var currentTuple = (current?.Major ?? 3, current?.Minor ?? 0, current?.Build ?? 0);
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
             client.DefaultRequestHeaders.Add("User-Agent", "TEA_siren");
             client.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
-            var resp = await client.GetAsync(RepoReleasesLatestUrl).ConfigureAwait(false);
+            var resp = await client.GetAsync(RepoReleasesUrl).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
-                return (false, "", "", "", currentTuple);
+                return (false, "", "", "", currentTuple, null);
             var json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-            var release = JsonSerializer.Deserialize<GitHubRelease>(json);
-            if (release?.tag_name == null)
-                return (false, "", "", "", currentTuple);
-            var remote = ParseVersionTag(release.tag_name);
+            var releases = JsonSerializer.Deserialize<List<GitHubRelease>>(json);
+            if (releases == null || releases.Count == 0)
+                return (false, "", "", "", currentTuple, null);
+            var latest = releases[0];
+            if (latest.tag_name == null)
+                return (false, "", "", "", currentTuple, null);
+            var remote = ParseVersionTag(latest.tag_name);
             if (remote == null || CompareVersion(remote.Value, currentTuple) <= 0)
-                return (false, "", "", "", currentTuple);
-            var versionStr = release.tag_name.TrimStart('v');
-            var body = string.IsNullOrWhiteSpace(release.body) ? "（无更新说明）" : release.body.Trim();
-            var url = release.html_url ?? "https://github.com/dghjfd/SirenSetting_Limit_Adjuster-Installer/releases";
-            return (true, versionStr, body, url, currentTuple);
+                return (false, "", "", "", currentTuple, null);
+            var versionStr = latest.tag_name.TrimStart('v');
+            var url = latest.html_url ?? "https://github.com/dghjfd/SirenSetting_Limit_Adjuster-Installer/releases";
+            var sb = new System.Text.StringBuilder();
+            foreach (var r in releases)
+            {
+                if (string.IsNullOrWhiteSpace(r.tag_name)) continue;
+                sb.Append("━━━ ").Append(r.tag_name).AppendLine(" ━━━");
+                sb.AppendLine(string.IsNullOrWhiteSpace(r.body) ? "（无更新说明）" : r.body.Trim());
+                sb.AppendLine();
+            }
+            var fullChangelog = sb.ToString().TrimEnd();
+            string? exeDownloadUrl = null;
+            if (latest.assets != null)
+            {
+                var exeAsset = latest.assets.FirstOrDefault(a => a?.name?.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) == true);
+                exeDownloadUrl = exeAsset?.browser_download_url;
+            }
+            return (true, versionStr, fullChangelog, url, currentTuple, exeDownloadUrl);
         }
         catch
         {
@@ -117,7 +134,7 @@ public partial class MainForm : Form
             {
                 var r = result.Value;
                 var forceUpdate = CompareVersion(r.currentTuple, (3, 6, 0)) >= 0;
-                ShowUpdateAvailable(this, r.versionStr, r.body, r.url, forceUpdate);
+                ShowUpdateAvailable(this, r.versionStr, r.fullChangelog, r.url, forceUpdate, r.exeDownloadUrl);
             }
             else
             {
@@ -150,13 +167,13 @@ public partial class MainForm : Form
         return a.build.CompareTo(b.build);
     }
 
-    private static void ShowUpdateAvailable(Form owner, string versionStr, string releaseBody, string releaseUrl, bool forceUpdate)
+    private static void ShowUpdateAvailable(Form owner, string versionStr, string fullChangelog, string releaseUrl, bool forceUpdate, string? exeDownloadUrl)
     {
         using var form = new Form
         {
             Text = forceUpdate ? "需要更新" : "发现新版本",
             FormBorderStyle = FormBorderStyle.FixedDialog,
-            Size = new Size(480, 380),
+            Size = new Size(520, 420),
             StartPosition = FormStartPosition.CenterParent,
             MaximizeBox = false,
             MinimizeBox = !forceUpdate,
@@ -166,13 +183,13 @@ public partial class MainForm : Form
         {
             Text = forceUpdate
                 ? $"检测到新版本 v{versionStr}，请更新后再使用本程序。"
-                : $"发现新版本：v{versionStr}，请前往 GitHub 下载。",
+                : $"发现新版本：v{versionStr}，可使用下方方式更新。",
             AutoSize = true,
             Location = new Point(12, 12),
             Font = new Font(form.Font.FontFamily, 10f, FontStyle.Bold),
             ForeColor = forceUpdate ? Color.FromArgb(200, 80, 80) : form.ForeColor
         };
-        var lblLog = new Label { Text = "更新日志：", AutoSize = true, Location = new Point(12, 40) };
+        var lblLog = new Label { Text = "各版本更新日志：", AutoSize = true, Location = new Point(12, 40) };
         var txtBody = new TextBox
         {
             ReadOnly = true,
@@ -180,24 +197,59 @@ public partial class MainForm : Form
             ScrollBars = ScrollBars.Vertical,
             WordWrap = true,
             Location = new Point(12, 58),
-            Size = new Size(440, 220),
+            Size = new Size(480, 200),
             BorderStyle = BorderStyle.FixedSingle,
             BackColor = SystemColors.Window,
-            Text = releaseBody
+            Text = fullChangelog
         };
-        var btnOpen = new Button
+        var yBtn = 268;
+        var btnLocal = new Button
         {
-            Text = "前往下载",
-            Size = new Size(forceUpdate ? 120 : 100, forceUpdate ? 32 : 28),
-            Location = new Point(12, 290)
+            Text = "本地更新",
+            Size = new Size(88, 28),
+            Location = new Point(12, yBtn)
         };
-        btnOpen.Click += (_, _) =>
+        btnLocal.Click += (_, _) =>
         {
+            using var ofd = new OpenFileDialog
+            {
+                Title = "选择已下载的新版本安装包（TEA_siren_v*.exe）",
+                Filter = "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*"
+            };
+            if (ofd.ShowDialog() != DialogResult.OK) return;
             try
             {
-                Process.Start(new ProcessStartInfo(releaseUrl) { UseShellExecute = true });
+                Process.Start(new ProcessStartInfo(ofd.FileName) { UseShellExecute = true });
+                form.Close();
+                Application.Exit();
             }
-            catch { /* ignore */ }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"无法启动：{ex.Message}", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        };
+        var btnCdn = new Button
+        {
+            Text = "立即更新（国内CDN）",
+            Size = new Size(130, 28),
+            Location = new Point(106, yBtn)
+        };
+        btnCdn.Enabled = !string.IsNullOrEmpty(exeDownloadUrl);
+        btnCdn.Click += (_, _) =>
+        {
+            if (string.IsNullOrEmpty(exeDownloadUrl)) return;
+            btnCdn.Enabled = false;
+            _ = DownloadAndRunUpdateAsync(exeDownloadUrl, form, () => btnCdn.Enabled = true);
+        };
+        var btnWeb = new Button
+        {
+            Text = "前往官网",
+            Size = new Size(88, 28),
+            Location = new Point(242, yBtn)
+        };
+        btnWeb.Click += (_, _) =>
+        {
+            try { Process.Start(new ProcessStartInfo(releaseUrl) { UseShellExecute = true }); } catch { }
             form.Close();
         };
         if (forceUpdate)
@@ -205,24 +257,52 @@ public partial class MainForm : Form
         form.Controls.Add(lblVer);
         form.Controls.Add(lblLog);
         form.Controls.Add(txtBody);
-        form.Controls.Add(btnOpen);
+        form.Controls.Add(btnLocal);
+        form.Controls.Add(btnCdn);
+        form.Controls.Add(btnWeb);
         if (!forceUpdate)
         {
-            var btnClose = new Button
-            {
-                Text = "关闭",
-                Size = new Size(100, 28),
-                Location = new Point(120, 290)
-            };
+            var btnClose = new Button { Text = "关闭", Size = new Size(88, 28), Location = new Point(336, yBtn) };
             btnClose.Click += (_, _) => form.Close();
             form.Controls.Add(btnClose);
             form.ActiveControl = btnClose;
         }
         else
-            form.ActiveControl = btnOpen;
+            form.ActiveControl = btnLocal;
         form.ShowDialog();
         if (forceUpdate)
             Application.Exit();
+    }
+
+    private static async Task DownloadAndRunUpdateAsync(string exeDownloadUrl, Form parentForm, Action? onFailure = null)
+    {
+        var proxyUrl = RawProxyPrefixes[0] + exeDownloadUrl;
+        var tempExe = Path.Combine(Path.GetTempPath(), "TEA_siren_update_" + DateTime.Now.Ticks + ".exe");
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+            client.DefaultRequestHeaders.Add("User-Agent", "TEA_siren");
+            var bytes = await client.GetByteArrayAsync(proxyUrl).ConfigureAwait(false);
+            await File.WriteAllBytesAsync(tempExe, bytes).ConfigureAwait(false);
+            parentForm.Invoke(() =>
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo(tempExe) { UseShellExecute = true });
+                    parentForm.Close();
+                    Application.Exit();
+                }
+                catch { }
+            });
+        }
+        catch (Exception ex)
+        {
+            parentForm.Invoke(() =>
+            {
+                onFailure?.Invoke();
+                MessageBox.Show($"国内CDN 下载失败：{ex.Message}\n请使用「本地更新」选择已下载的 exe，或「前往官网」下载。", "下载失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            });
+        }
     }
 
     private sealed class GitHubRelease
@@ -231,6 +311,13 @@ public partial class MainForm : Form
         public string? name { get; set; }
         public string? body { get; set; }
         public string? html_url { get; set; }
+        public GitHubReleaseAsset[]? assets { get; set; }
+    }
+
+    private sealed class GitHubReleaseAsset
+    {
+        public string? name { get; set; }
+        public string? browser_download_url { get; set; }
     }
 
     private static void ShowWelcomeMessage()
