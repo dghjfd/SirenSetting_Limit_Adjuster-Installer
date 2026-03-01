@@ -36,6 +36,8 @@ public partial class MainForm : Form
 
     private const string RepoReleasesUrl = "https://api.github.com/repos/dghjfd/SirenSetting_Limit_Adjuster-Installer/releases?per_page=20";
 
+    private static string SettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TEA_siren", "settings.txt");
+
     public MainForm()
     {
         InitializeComponent();
@@ -45,12 +47,119 @@ public partial class MainForm : Form
     private void MainForm_Load(object sender, EventArgs e)
     {
         var ver = Assembly.GetExecutingAssembly().GetName().Version;
-        Text = $"TEA Siren Installer v{ver?.Major ?? 3}.{ver?.Minor ?? 0}.{ver?.Build ?? 0} © TEARLESSVVOID";
+        Text = $"{Lang.Get("FormTitle")} v{ver?.Major ?? 3}.{ver?.Minor ?? 0}.{ver?.Build ?? 0} © TEARLESSVVOID";
         txtPath.Text = string.Empty;
         TrySetIconFromLogo();
-        Log("程序已启动");
+        LoadSettings();
+        ApplyLanguage();
+        chkCheckUpdateStartup.CheckedChanged += (_, _) => SaveSettings();
+        TrySetIconFromLogo();
+        Log(Lang.Current == "zh" ? "程序已启动" : "Program started");
         BeginInvoke(ShowWelcomeMessage);
-        _ = CheckForUpdateAsync();
+        if (chkCheckUpdateStartup.Checked)
+            _ = CheckForUpdateAsync();
+    }
+
+    private void LoadSettings()
+    {
+        try
+        {
+            if (File.Exists(SettingsPath))
+            {
+                var lines = File.ReadAllLines(SettingsPath);
+                foreach (var line in lines)
+                {
+                    var kv = line.Split(new[] { '=' }, 2, StringSplitOptions.None);
+                    if (kv.Length != 2) continue;
+                    var k = kv[0].Trim();
+                    var v = kv[1].Trim();
+                    if (k == "lang" && (v == "en" || v == "zh")) Lang.Current = v;
+                    if (k == "check_update_startup") chkCheckUpdateStartup.Checked = v != "0";
+                }
+            }
+            else
+            {
+                Lang.Current = "en";
+                chkCheckUpdateStartup.Checked = true;
+            }
+            comboLanguage.SelectedIndex = Lang.Current == "zh" ? 1 : 0;
+        }
+        catch { Lang.Current = "en"; comboLanguage.SelectedIndex = 0; chkCheckUpdateStartup.Checked = true; }
+    }
+
+    private void SaveSettings()
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(SettingsPath);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            File.WriteAllText(SettingsPath, $"lang={Lang.Current}\r\ncheck_update_startup={(chkCheckUpdateStartup.Checked ? "1" : "0")}\r\n");
+        }
+        catch { }
+    }
+
+    private void ApplyLanguage()
+    {
+        var ver = Assembly.GetExecutingAssembly().GetName().Version;
+        Text = $"{Lang.Get("FormTitle")} v{ver?.Major ?? 3}.{ver?.Minor ?? 0}.{ver?.Build ?? 0} © TEARLESSVVOID";
+        tabInstall.Text = Lang.Get("TabInstall");
+        tabOptions.Text = Lang.Get("TabOptions");
+        tabSponsors.Text = Lang.Get("TabSponsors");
+        tabChangelog.Text = Lang.Get("TabChangelog");
+        lblTitle.Text = Lang.Get("Title");
+        lblPath.Text = Lang.Get("PluginsDir");
+        txtPath.PlaceholderText = Lang.Get("PathPlaceholder");
+        btnBrowse.Text = Lang.Get("BtnBrowse");
+        btnScan.Text = Lang.Get("BtnScan");
+        btnInstall.Text = Lang.Get("BtnInstall");
+        btnInstallLocal.Text = Lang.Get("BtnInstallLocal");
+        btnCheckUpdate.Text = Lang.Get("BtnCheckUpdate");
+        lblStatus.Text = Lang.Get("StatusReady");
+        lblLog.Text = Lang.Get("LblLog");
+        lblCopyright.Text = Lang.Get("Copyright");
+        lblOptionLanguage.Text = Lang.Get("OptionLanguage");
+        chkCheckUpdateStartup.Text = Lang.Get("OptionCheckOnStartup");
+        lblSponsorsTitle.Text = Lang.Get("SponsorsTitle");
+        txtSponsors.Text = Lang.Get("SponsorsBody");
+        lblChangelogTitle.Text = Lang.Get("ChangelogTitle");
+        btnChangelogLoad.Text = Lang.Get("ChangelogLoad");
+    }
+
+    private void ComboLanguage_SelectedIndexChanged(object? sender, EventArgs e)
+    {
+        if (comboLanguage.SelectedIndex < 0) return;
+        Lang.Current = comboLanguage.SelectedIndex == 1 ? "zh" : "en";
+        ApplyLanguage();
+        SaveSettings();
+    }
+
+    private async void BtnChangelogLoad_Click(object? sender, EventArgs e)
+    {
+        btnChangelogLoad.Enabled = false;
+        btnChangelogLoad.Text = Lang.Get("ChangelogLoading");
+        txtChangelog.Text = "";
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            client.DefaultRequestHeaders.Add("User-Agent", "TEA_siren");
+            client.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
+            var resp = await client.GetAsync(RepoReleasesUrl).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode) { txtChangelog.Text = "Failed to load."; return; }
+            var json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+            var releases = JsonSerializer.Deserialize<List<GitHubRelease>>(json);
+            var sb = new System.Text.StringBuilder();
+            if (releases != null)
+                foreach (var r in releases)
+                {
+                    if (string.IsNullOrWhiteSpace(r.tag_name)) continue;
+                    sb.Append("━━━ ").Append(r.tag_name).AppendLine(" ━━━");
+                    sb.AppendLine(string.IsNullOrWhiteSpace(r.body) ? "(No description)" : r.body.Trim());
+                    sb.AppendLine();
+                }
+            BeginInvoke(() => { txtChangelog.Text = sb.Length > 0 ? sb.ToString().TrimEnd() : "No releases."; });
+        }
+        catch { BeginInvoke(() => txtChangelog.Text = "Network error."); }
+        finally { BeginInvoke(() => { btnChangelogLoad.Enabled = true; btnChangelogLoad.Text = Lang.Get("ChangelogLoad"); }); }
     }
 
     private const int MaxSkipVersions = 2;
@@ -349,23 +458,7 @@ public partial class MainForm : Form
 
     private static void ShowWelcomeMessage()
     {
-        MessageBox.Show(
-            "【SirenSetting Limit Adjuster 安装器】\n\n" +
-            "▶ 功能：自动从 GitHub 官方仓库下载 ASI 插件到您指定的 FiveM plugins 目录，用于提升警笛相关限制。\n\n" +
-            "▶ 使用方法：\n" +
-            "  1. 点击「自动扫描」或「选择目录」指定 FiveM 的 plugins 文件夹\n" +
-            "  2. 点击「安装插件」从 GitHub 自动下载并安装；若无法访问 GitHub，可先通过其他途径获取 .asi 文件，再点击「从本地安装」选择该文件即可\n" +
-            "  3. 若已存在旧版本，将自动备份后替换\n\n" +
-            "▶ 本软件完全免费。如有人向您收费，您已被骗，请勿购买。\n\n" +
-            "▶ 安全声明：\n" +
-            "  · 无后门、无捆绑、无扫盘，不修改内存、不注入进程\n" +
-            "  · 仅执行：选择目录 → 下载 ASI 文件 → 复制到指定 plugins 目录\n" +
-            "  · 关闭程序即完全退出，不会驻留后台\n" +
-            "  · 源码可公开审核，欢迎监督。如有后门，那么你下载的程序可能遭到恶意二次修改并且重新宣传\n\n" +
-            "制作人: TEARLESSVVOID\n© Copyright TEARLESSVVOID",
-            "使用说明",
-            MessageBoxButtons.OK,
-            MessageBoxIcon.Information);
+        MessageBox.Show(Lang.Get("WelcomeBody"), Lang.Get("WelcomeTitle"), MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private Icon? _formIcon; // 保持引用，避免图标被回收后失效
